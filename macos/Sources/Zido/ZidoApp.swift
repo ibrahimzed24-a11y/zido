@@ -15,7 +15,7 @@ struct ZidoApp: App {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    let model = ZidoModel()
+    let model = ZidoEngine.shared.model
     private var notch: NotchPanel?
     private var onboarding: NSWindow?
     private var heartbeat: Timer?
@@ -49,5 +49,89 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         onboarding = window
+    }
+}
+
+// MARK: - Main view
+
+@MainActor
+final class ZidoEngine: ObservableObject {
+    static let shared = ZidoEngine()
+    let model = ZidoModel()
+}
+
+class ZidoViewModel: ObservableObject {
+    enum ViewState { case chat, settings }
+
+    @Published var currentView: ViewState = .chat
+
+    func toggleSettings() {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            currentView = currentView == .chat ? .settings : .chat
+        }
+    }
+}
+
+struct ZidoMainView: View {
+    // Use @StateObject to ensure the state persists and triggers redraws
+    @StateObject var viewModel = ZidoViewModel()
+
+    var body: some View {
+        VStack {
+            if viewModel.currentView == .chat {
+                ZidoChatView(viewModel: viewModel)
+            } else {
+                ZidoSettingsView(viewModel: viewModel)
+            }
+        }
+        .frame(width: 300, height: 400)
+        .background(Color(NSColor.windowBackgroundColor))
+    }
+}
+
+struct ZidoChatView: View {
+    @ObservedObject var viewModel: ZidoViewModel
+    @ObservedObject var engine = ZidoEngine.shared
+    @State private var inputText: String = ""
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Image(systemName: "sparkles")
+                    .foregroundColor(.purple)
+                Text("Zido")
+                    .font(.headline)
+                Spacer()
+                Button(action: { viewModel.toggleSettings() }) {
+                    Image(systemName: "gearshape")
+                }
+                .buttonStyle(.plain)
+            }
+            .padding()
+
+            ChatView(model: engine.model)
+        }
+    }
+}
+
+struct ZidoSettingsView: View {
+    @ObservedObject var viewModel: ZidoViewModel
+    @ObservedObject var engine = ZidoEngine.shared
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button(action: { viewModel.toggleSettings() }) {
+                    Image(systemName: "chevron.left")
+                }
+                .buttonStyle(.plain)
+                Text("Settings")
+                    .font(.headline)
+                Spacer()
+            }
+            .padding()
+
+            ScrollView { SettingsView(model: engine.model) }
+        }
     }
 }
