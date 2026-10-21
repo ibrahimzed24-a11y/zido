@@ -20,6 +20,8 @@ export type AuthContext = { user: User; device: Device | null };
 
 /** The signed-in user, from the session cookie (web) or a device key Bearer token (macOS app). */
 export async function currentAuth(): Promise<AuthContext | null> {
+  // Without a database nobody can be signed in; answer 401 rather than failing.
+  if (!process.env.DATABASE_URL) return null;
   const secret = optionalSessionSecret();
   if (secret) {
     const uid = readSessionValue((await cookies()).get(SESSION_COOKIE)?.value, secret);
