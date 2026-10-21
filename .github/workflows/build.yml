@@ -41,7 +41,7 @@ jobs:
               echo "No Zido.app or Zido executable found in $DERIVED"
               exit 1
             fi
-            APP_PATH="$RUNNER_TEMP/Zido.app"
+            APP_PATH="$GITHUB_WORKSPACE/Zido.app"
             mkdir -p "$APP_PATH/Contents/MacOS"
             cp "$BIN" "$APP_PATH/Contents/MacOS/Zido"
             cp macos/Info.plist "$APP_PATH/Contents/Info.plist"
