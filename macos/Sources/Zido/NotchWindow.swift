@@ -4,7 +4,7 @@ import SwiftUI
 /// A borderless panel pinned to the top centre of the main screen, just under the notch.
 final class NotchPanel: NSPanel {
     static let collapsed = NSSize(width: 220, height: 34)
-    static let expanded = NSSize(width: 440, height: 420)
+    static let expanded = NSSize(width: 440, height: 434)
 
     private let model: ZidoModel
 
@@ -66,7 +66,7 @@ struct NotchView: View {
             .contentShape(Rectangle())
             .onTapGesture { if !model.expanded { toggle() } }
 
-            if model.expanded { ChatView(model: model) }
+            if model.expanded { ZidoMainView() }
         }
         .background(model.expanded ? AnyView(VisualEffect()) : AnyView(Color.black))
         .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 18, bottomTrailingRadius: 18))
