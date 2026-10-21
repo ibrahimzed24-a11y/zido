@@ -18,21 +18,36 @@ model User {
   email                String?        @unique
   name                 String?
   githubId             String?        @unique
+  githubLogin          String?
   avatarUrl            String?
   plan                 Plan           @default(FREE)
   stripeCustomerId     String?        @unique
   stripeSubscriptionId String?        @unique
-  /// sha256 of the key the macOS app sends as a Bearer token
-  deviceKeyHash        String?        @unique
-  /// PROFILE.md: lasting facts Zido has learned about the user
-  profileMd            String         @default("")
-  /// VOLATILE.md: short-lived recent context, trimmed automatically
-  volatileMd           String         @default("")
   createdAt            DateTime       @default(now())
   updatedAt            DateTime       @updatedAt
   integrations         Integration[]
+  devices              Device[]
   conversations        Conversation[]
   agentTasks           AgentTask[]
+  activities           Activity[]
+  memoryFiles          MemoryFile[]
+  subscriptions        Subscription[]
+}
+
+/// Stripe subscriptions; User.plan mirrors the active one. Written only by the verified webhook.
+model Subscription {
+  /// Stripe subscription id (sub_...)
+  id               String    @id
+  userId           String
+  plan             Plan
+  status           String
+  priceId          String?
+  currentPeriodEnd DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 /// Third-party tokens (GitHub, Vercel), encrypted with AES-256-GCM. Never stored in plain text.
@@ -48,6 +63,48 @@ model Integration {
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, provider])
+}
+
+/// A Mac running the Zido app. The app sends its device key as a Bearer token; only the sha256 is stored.
+model Device {
+  id         String    @id @default(cuid())
+  userId     String
+  name       String    @default("My Mac")
+  keyHash    String    @unique
+  platform   String    @default("macOS")
+  appVersion String?
+  lastSeenAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// The activity feed on the dashboard.
+model Activity {
+  id        String   @id @default(cuid())
+  userId    String
+  kind      String
+  summary   String
+  meta      Json?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+/// Per-user memory files: PROFILE.md (lasting facts) and VOLATILE.md (recent context).
+model MemoryFile {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  content   String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
 }
 
 model Conversation {
@@ -67,7 +124,7 @@ model Message {
   conversationId String
   role           String
   content        String
-  /// [RECT: x, y, w, h, label] highlights returned with an assistant message
+  /// Normalized [RECT: x, y, w, h, label] highlights (0-1 fractions) returned with an assistant message
   rects          Json?
   createdAt      DateTime     @default(now())
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -88,6 +145,7 @@ model AgentTask {
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, status])
+  @@index([userId, createdAt])
 }
 
 /// Processed Stripe webhook events, for idempotency

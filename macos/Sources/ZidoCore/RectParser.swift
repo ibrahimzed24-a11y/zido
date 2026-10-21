@@ -1,57 +1,46 @@
-import CoreGraphics
 import Foundation
+import CoreGraphics
 
-/// A highlight from Zido's reply: `[RECT: x, y, w, h, label]`, in screenshot pixels with a top-left origin.
-public struct ZidoRect: Equatable, Codable {
-    public var x: Double
-    public var y: Double
-    public var w: Double
-    public var h: Double
-    public var label: String
-
-    public init(x: Double, y: Double, w: Double, h: Double, label: String) {
-        self.x = x
-        self.y = y
-        self.w = w
-        self.h = h
-        self.label = label
-    }
-}
-
+/// Reads [RECT: x, y, w, h, label] tags and maps normalized rects into view or screen coordinates.
 public enum RectParser {
-    static let pattern = #"\[RECT:\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*,\s*([^\]]*?)\s*\]"#
+    private static let pattern = #"\[RECT:\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*,\s*([^\]]*?)\s*\]"#
 
-    public static func parse(_ text: String) -> (clean: String, rects: [ZidoRect]) {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return (text, []) }
+    /// Parses tags in the exact form [RECT: x, y, w, h, label]. Values above 1 are treated as a 0-1000 grid.
+    public static func parse(_ text: String) -> [NormRect] {
+        guard let re = try? NSRegularExpression(pattern: pattern) else { return [] }
         let ns = text as NSString
-        let range = NSRange(location: 0, length: ns.length)
-        var rects: [ZidoRect] = []
-        for match in regex.matches(in: text, range: range) {
-            func group(_ i: Int) -> String { ns.substring(with: match.range(at: i)) }
-            rects.append(ZidoRect(
-                x: Double(group(1)) ?? 0,
-                y: Double(group(2)) ?? 0,
-                w: Double(group(3)) ?? 0,
-                h: Double(group(4)) ?? 0,
-                label: group(5)
-            ))
+        return re.matches(in: text, range: NSRange(location: 0, length: ns.length)).compactMap { m in
+            let v = (1...4).compactMap { Double(ns.substring(with: m.range(at: $0))) }
+            guard v.count == 4 else { return nil }
+            let label = ns.substring(with: m.range(at: 5))
+            return normalize(NormRect(x: v[0], y: v[1], w: v[2], h: v[3], label: label))
         }
-        let clean = regex.stringByReplacingMatches(in: text, range: range, withTemplate: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return (clean, rects)
     }
 
-    /// Maps a rect from screenshot pixels into a view of `viewSize` (both top-left origin), e.g. the overlay.
-    public static func toView(_ r: ZidoRect, imageSize: CGSize, viewSize: CGSize) -> CGRect {
-        guard imageSize.width > 0, imageSize.height > 0 else { return .zero }
-        let sx = viewSize.width / imageSize.width
-        let sy = viewSize.height / imageSize.height
-        return CGRect(x: r.x * sx, y: r.y * sy, width: r.w * sx, height: r.h * sy)
+    /// Clamps to the unit square; nil when nothing is left.
+    public static func normalize(_ r: NormRect) -> NormRect? {
+        let scale = max(r.x, r.y, r.w, r.h) > 1 ? 1000.0 : 1.0
+        let x = min(max(r.x / scale, 0), 1)
+        let y = min(max(r.y / scale, 0), 1)
+        let w = min(max(r.w / scale, 0), 1 - x)
+        let h = min(max(r.h / scale, 0), 1 - y)
+        guard w > 0, h > 0 else { return nil }
+        let label = r.label.trimmingCharacters(in: .whitespacesAndNewlines)
+        return NormRect(x: x, y: y, w: w, h: h, label: label.isEmpty ? "here" : String(label.prefix(60)))
     }
 
-    /// Centre of a rect in global display coordinates (top-left origin), as `CGEvent` expects.
-    public static func centerInGlobal(_ r: ZidoRect, imageSize: CGSize, displayBounds: CGRect) -> CGPoint {
-        let local = toView(r, imageSize: imageSize, viewSize: displayBounds.size)
-        return CGPoint(x: displayBounds.minX + local.midX, y: displayBounds.minY + local.midY)
+    /// Maps a normalized rect into a view of `size`. AppKit views are bottom-left based, so `flipped` defaults to false.
+    public static func toView(_ r: NormRect, size: CGSize, flipped: Bool = false) -> CGRect {
+        let w = r.w * size.width
+        let h = r.h * size.height
+        let x = r.x * size.width
+        let y = flipped ? r.y * size.height : (1 - r.y - r.h) * size.height
+        return CGRect(x: x, y: y, width: w, height: h)
+    }
+
+    /// The centre of a rect in global display coordinates (top-left origin), as CGEvent expects.
+    public static func clickPoint(_ r: NormRect, displayBounds: CGRect) -> CGPoint {
+        CGPoint(x: displayBounds.minX + (r.x + r.w / 2) * displayBounds.width,
+                y: displayBounds.minY + (r.y + r.h / 2) * displayBounds.height)
     }
 }

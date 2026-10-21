@@ -5,3 +5,27 @@
 html {
   scroll-behavior: smooth;
 }
+
+@keyframes zbuddy-pulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.45); }
+  50% { transform: scale(1.06); box-shadow: 0 0 0 12px rgba(139, 92, 246, 0); }
+}
+
+@keyframes zbuddy-bounce {
+  0%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-18%); }
+  60% { transform: translateY(4%); }
+}
+
+@keyframes float-slow {
+  0%, 100% { transform: translateY(0) rotateX(4deg); }
+  50% { transform: translateY(-14px) rotateX(4deg); }
+}
+
+.zbuddy-pulse { animation: zbuddy-pulse 2.4s ease-in-out infinite; }
+.zbuddy-bounce { animation: zbuddy-bounce 0.9s ease-in-out infinite; }
+.float-slow { animation: float-slow 7s ease-in-out infinite; transform-style: preserve-3d; }
+
+@media (prefers-reduced-motion: reduce) {
+  .zbuddy-pulse, .zbuddy-bounce, .float-slow { animation: none; }
+}

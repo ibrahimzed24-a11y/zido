@@ -1,78 +1,84 @@
+import SwiftUI
 import AppKit
-import CoreGraphics
-import Foundation
 import ZidoCore
+
+struct ChatMessage: Identifiable, Equatable {
+    let id = UUID()
+    let fromUser: Bool
+    let text: String
+}
 
 @MainActor
 final class ZidoModel: ObservableObject {
+    enum BuddyState { case idle, thinking }
+
     @Published var expanded = false
-    @Published var question = ""
-    @Published var reply = ""
-    @Published var rects: [ZidoRect] = []
-    @Published var actions: [AgentAction] = []
-    @Published var imageSize: CGSize = .zero
-    @Published var busy = false
-    @Published var status = "Grab → Say Hello → Get it Done"
+    @Published var buddy: BuddyState = .idle
+    @Published var messages: [ChatMessage] = []
+    @Published var draft = ""
+    @Published var status: String?
+    @Published var linkedDevice: String?
 
-    let capture = ScreenCapture()
-    let client = ZidoClient()
-    let memory: MemoryStore
+    @AppStorage("serverURL") var serverURL = ZidoClient.defaultServer
+
+    var overlay: OverlayController?
     private var conversationId: String?
+    private let memory = MemoryStore(directory: MemoryStore.defaultDirectory())
 
-    init() {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        memory = MemoryStore(directory: support.appendingPathComponent("Zido", isDirectory: true))
-        try? memory.ensureFiles()
-    }
+    var client: ZidoClient { ZidoClient(baseURL: URL(string: serverURL) ?? URL(string: ZidoClient.defaultServer)!, deviceKey: Keychain.loadDeviceKey()) }
 
-    /// Grab: capture the screen. Say Hello: send it with the question. Get it Done: show highlights and agent results.
     func ask() async {
-        let text = question.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !busy else { return }
-        busy = true
-        defer { busy = false }
+        let question = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !question.isEmpty, buddy == .idle else { return }
+        draft = ""
+        messages.append(ChatMessage(fromUser: true, text: question))
 
-        guard let shot = capture.captureMainDisplay() else {
-            status = "Allow Screen Recording for Zido in System Settings, then try again."
+        guard Keychain.loadDeviceKey() != nil else {
+            messages.append(ChatMessage(fromUser: false, text: "Link this Mac first: create a device key on the dashboard and paste it in Settings."))
             return
         }
-        status = "Looking…"
+        guard Permissions.screenRecordingGranted, let shot = ScreenCapture.captureMainDisplay() else {
+            messages.append(ChatMessage(fromUser: false, text: "I need Screen Recording permission to see your screen. Open Settings to allow it."))
+            return
+        }
+
+        buddy = .thinking
+        defer { buddy = .idle }
         do {
-            let response = try await client.vision(VisionRequest(
-                image: shot.base64,
-                mediaType: shot.mediaType,
-                question: text,
-                conversationId: conversationId,
-                screen: ScreenSize(width: shot.pixelSize.width, height: shot.pixelSize.height),
-                allowAgents: true
-            ))
-            conversationId = response.conversationId
-            reply = response.reply
-            rects = response.rects
-            actions = response.actions
-            imageSize = shot.pixelSize
-            question = ""
-            status = response.actions.isEmpty ? "Done" : "\(response.actions.filter(\.ok).count) of \(response.actions.count) tasks done"
-            try? memory.appendVolatile("Asked: \(text)")
+            let res = try await client.vision(VisionRequest(image: shot.base64, question: question, conversationId: conversationId, screen: shot.size))
+            conversationId = res.conversationId
+            messages.append(ChatMessage(fromUser: false, text: res.reply))
+            overlay?.show(res.rects)
+            memory.appendVolatile("Asked: \(question)")
         } catch {
+            messages.append(ChatMessage(fromUser: false, text: error.localizedDescription))
+        }
+    }
+
+    /// Links this Mac: stores the key in the Keychain, then proves it with a heartbeat.
+    func link(key: String) async {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("zido_") else { status = "That does not look like a Zido device key."; return }
+        Keychain.saveDeviceKey(trimmed)
+        await sendHeartbeat()
+        if linkedDevice == nil { Keychain.deleteDeviceKey() }
+    }
+
+    func unlink() {
+        Keychain.deleteDeviceKey()
+        linkedDevice = nil
+        status = "This Mac is unlinked."
+    }
+
+    func sendHeartbeat() async {
+        guard Keychain.loadDeviceKey() != nil else { linkedDevice = nil; return }
+        do {
+            let hb = try await client.heartbeat()
+            linkedDevice = "\(hb.device.name) · \(hb.user.plan.capitalized)"
+            status = nil
+        } catch {
+            linkedDevice = nil
             status = error.localizedDescription
         }
-    }
-
-    func clearHighlights() {
-        rects = []
-    }
-
-    /// Clicks the first highlighted element with CGEvent, only when the user presses the button for it.
-    func clickFirstHighlight() {
-        guard let rect = rects.first else { return }
-        guard InputController.isTrusted(prompt: true) else {
-            status = "Allow Accessibility for Zido so it can click for you."
-            return
-        }
-        let point = RectParser.centerInGlobal(rect, imageSize: imageSize, displayBounds: CGDisplayBounds(CGMainDisplayID()))
-        expanded = false
-        rects = []
-        InputController.click(at: point)
     }
 }

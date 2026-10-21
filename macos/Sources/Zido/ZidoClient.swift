@@ -1,41 +1,46 @@
 import Foundation
 import ZidoCore
 
-enum ZidoError: LocalizedError {
-    case notLinked
+enum ZidoClientError: LocalizedError {
     case server(String)
+    case notLinked
 
     var errorDescription: String? {
         switch self {
-        case .notLinked: return "Link this Mac: create a device key in the Zido dashboard and paste it in Settings."
         case .server(let message): return message
+        case .notLinked: return "This Mac is not linked yet."
         }
     }
 }
 
 struct ZidoClient {
-    static let serverKey = "zidoServerURL"
+    static let defaultServer = "https://zido-gamma.vercel.app"
 
-    var baseURL: URL {
-        let raw = UserDefaults.standard.string(forKey: Self.serverKey) ?? "http://localhost:3000"
-        return URL(string: raw) ?? URL(string: "http://localhost:3000")!
+    let baseURL: URL
+    let deviceKey: String?
+
+    func vision(_ body: VisionRequest) async throws -> VisionResponse {
+        try await post("api/zido/vision", body: body, timeout: 70)
     }
 
-    func vision(_ request: VisionRequest) async throws -> VisionResponse {
-        guard let key = Keychain.deviceKey(), !key.isEmpty else { throw ZidoError.notLinked }
-        var urlRequest = URLRequest(url: baseURL.appendingPathComponent("api/zido/vision"))
-        urlRequest.httpMethod = "POST"
-        urlRequest.timeoutInterval = 90
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-        urlRequest.httpBody = try JSONEncoder().encode(request)
+    func heartbeat() async throws -> HeartbeatResponse {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+        return try await post("api/zido/device/heartbeat", body: ["appVersion": version], timeout: 15)
+    }
 
-        let (data, response) = try await URLSession.shared.data(for: urlRequest)
-        guard let http = response as? HTTPURLResponse else { throw ZidoError.server("No response from Zido") }
-        guard (200..<300).contains(http.statusCode) else {
-            let message = (try? JSONDecoder().decode([String: String].self, from: data))?["error"]
-            throw ZidoError.server(message ?? "Zido server error \(http.statusCode)")
+    private func post<Body: Encodable, Out: Decodable>(_ path: String, body: Body, timeout: TimeInterval) async throws -> Out {
+        guard let key = deviceKey else { throw ZidoClientError.notLinked }
+        var req = URLRequest(url: baseURL.appendingPathComponent(path), timeoutInterval: timeout)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        req.httpBody = try JSONEncoder().encode(body)
+        let (data, response) = try await URLSession.shared.data(for: req)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            let message = (try? JSONDecoder().decode(APIErrorBody.self, from: data))?.error ?? "Server error \(status)"
+            throw ZidoClientError.server(message)
         }
-        return try JSONDecoder().decode(VisionResponse.self, from: data)
+        return try JSONDecoder().decode(Out.self, from: data)
     }
 }

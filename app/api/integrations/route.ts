@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { currentUser } from "@/lib/auth";
 import { connectedProviders, removeIntegration, saveIntegrationToken } from "@/lib/integrations";
 import { vercelWhoAmI } from "@/lib/tools/vercel";
+import { logActivity } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,7 @@ export async function POST(req: Request) {
   try {
     const account = await vercelWhoAmI(body.token.trim());
     await saveIntegrationToken(user.id, "vercel", body.token.trim());
+    await logActivity(user.id, "integration", `Connected Vercel as ${account}`);
     return NextResponse.json({ ok: true, provider: "vercel", account });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Could not save the token" }, { status: 400 });
@@ -34,5 +36,6 @@ export async function DELETE(req: Request) {
   const provider = new URL(req.url).searchParams.get("provider");
   if (provider !== "vercel" && provider !== "github") return NextResponse.json({ error: "Unknown provider" }, { status: 400 });
   await removeIntegration(user.id, provider);
+  await logActivity(user.id, "integration", `Disconnected ${provider}`);
   return NextResponse.json({ ok: true });
 }
