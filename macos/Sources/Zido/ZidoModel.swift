@@ -18,6 +18,9 @@ final class ZidoModel: ObservableObject {
     @Published var draft = ""
     @Published var status: String?
     @Published var linkedDevice: String?
+    @Published var plan: String?
+    /// Max (or the Founder Override): no usage limits, so no "limit reached" warnings.
+    @Published var unlimited = false
 
     @AppStorage("serverURL") var serverURL = ZidoClient.defaultServer
 
@@ -50,6 +53,8 @@ final class ZidoModel: ObservableObject {
             messages.append(ChatMessage(fromUser: false, text: res.reply))
             overlay?.show(res.rects)
             memory.appendVolatile("Asked: \(question)")
+        } catch ZidoClientError.limitReached(_) where unlimited {
+            messages.append(ChatMessage(fromUser: false, text: "Zido could not answer just now. Try again in a moment."))
         } catch {
             messages.append(ChatMessage(fromUser: false, text: error.localizedDescription))
         }
@@ -67,6 +72,8 @@ final class ZidoModel: ObservableObject {
     func unlink() {
         Keychain.deleteDeviceKey()
         linkedDevice = nil
+        plan = nil
+        unlimited = false
         status = "This Mac is unlinked."
     }
 
@@ -74,7 +81,10 @@ final class ZidoModel: ObservableObject {
         guard Keychain.loadDeviceKey() != nil else { linkedDevice = nil; return }
         do {
             let hb = try await client.heartbeat()
-            linkedDevice = "\(hb.device.name) · \(hb.user.plan.capitalized)"
+            let resolved = ZidoEngine.resolvePlan(for: hb.user)
+            plan = resolved
+            unlimited = PlanPolicy.isUnlimited(plan: resolved) || hb.user.unlimited == true
+            linkedDevice = "\(hb.device.name) · \(resolved.capitalized)"
             status = nil
         } catch {
             linkedDevice = nil

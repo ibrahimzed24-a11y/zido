@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getStats } from "@/lib/stats";
 import { talkUsage } from "@/lib/usage";
 import { formatTimeSaved, timeAgo } from "@/lib/format";
+import { formatLimit } from "@/lib/plans";
 import { StatCard } from "@/components/StatCard";
 import { DeviceList } from "@/components/DeviceList";
 
@@ -32,7 +33,7 @@ export default async function DashboardPage() {
         <StatCard
           icon={<MessageCircle className="h-4 w-4 text-zido-400" />}
           label="Talk Message Limits"
-          value={`${talk.used} / ${talk.limit}`}
+          value={`${talk.used} / ${formatLimit(talk.limit)}`}
         />
       </div>
 

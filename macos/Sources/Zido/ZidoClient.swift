@@ -3,11 +3,12 @@ import ZidoCore
 
 enum ZidoClientError: LocalizedError {
     case server(String)
+    case limitReached(String)
     case notLinked
 
     var errorDescription: String? {
         switch self {
-        case .server(let message): return message
+        case .server(let message), .limitReached(let message): return message
         case .notLinked: return "This Mac is not linked yet."
         }
     }
@@ -39,7 +40,7 @@ struct ZidoClient {
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
             let message = (try? JSONDecoder().decode(APIErrorBody.self, from: data))?.error ?? "Server error \(status)"
-            throw ZidoClientError.server(message)
+            throw status == 429 ? ZidoClientError.limitReached(message) : ZidoClientError.server(message)
         }
         return try JSONDecoder().decode(Out.self, from: data)
     }

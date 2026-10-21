@@ -5,7 +5,7 @@ export function Pricing({ currentPlan }: { currentPlan?: string }) {
   return (
     <section id="pricing" className="mx-auto max-w-6xl px-6 py-24">
       <h2 className="text-center text-3xl font-semibold md:text-4xl">Pricing</h2>
-      <p className="mt-3 text-center text-neutral-400">Start free. Upgrade when Zido starts doing the work.</p>
+      <p className="mt-3 text-center text-neutral-400">Every account starts on Max, with unlimited usage.</p>
       <div className="mt-12 grid gap-6 md:grid-cols-3">
         {PLANS.map((plan) => (
           <div

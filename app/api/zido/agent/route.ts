@@ -5,7 +5,7 @@ import { chatWithFallback, localOllamaConfig, ollamaConfig, toolCallArgs, type O
 import { agentSystemPrompt } from "@/lib/prompts";
 import { AGENT_TOOLS, isAgentTool, runTool } from "@/lib/tools";
 import { readMemory, recordTurn } from "@/lib/memory-store";
-import { canUseAgents } from "@/lib/plans";
+import { canUseAgents, withinLimit } from "@/lib/plans";
 import { agentUsage } from "@/lib/usage";
 import { logActivity } from "@/lib/activity";
 
@@ -18,7 +18,7 @@ const MAX_CALLS_PER_REQUEST = 6;
 
 /**
  * POST /api/zido/agent: { task, conversationId? }.
- * Controlled tool use: Pro/Max only, a monthly quota, an allow-list of four tools, validated arguments,
+ * Controlled tool use: Pro/Max only, a monthly quota (none on Max), an allow-list of four tools, validated arguments,
  * at most MAX_CALLS_PER_REQUEST calls and MAX_ROUNDS model turns, and every call logged as an AgentTask.
  */
 export async function POST(req: Request) {
@@ -39,7 +39,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Agent tasks are part of Pro and Max." }, { status: 403 });
   }
   const quota = await agentUsage(user.id, user.plan);
-  if (quota.used >= quota.limit) {
+  if (!withinLimit(quota.used, quota.limit)) {
     return NextResponse.json({ error: "Monthly agent task limit reached.", usage: quota }, { status: 429 });
   }
 
@@ -64,7 +64,7 @@ export async function POST(req: Request) {
   ];
 
   const actions: { tool: string; ok: boolean; summary: string }[] = [];
-  let budget = Math.min(MAX_CALLS_PER_REQUEST, quota.limit - quota.used);
+  let budget = quota.limit === null ? MAX_CALLS_PER_REQUEST : Math.min(MAX_CALLS_PER_REQUEST, quota.limit - quota.used);
   let reply = "";
   let model = "";
 

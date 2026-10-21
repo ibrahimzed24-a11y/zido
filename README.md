@@ -40,7 +40,7 @@ Both are stored on the user row and shown in Settings; the Mac app keeps local c
 
 ## Pricing
 
-Free, Pro (**Recommended**) and Max are defined in `lib/plans.ts` (shown prices: $0, $20, $100 per month; edit them there). Paid plans map to Stripe prices via `STRIPE_PRICE_PRO` and `STRIPE_PRICE_MAX`.
+Free, Pro (**Recommended**) and Max are defined in `lib/plans.ts` (shown prices: $0, $20, $100 per month; edit them there). **Max is the default plan** (`DEFAULT_PLAN`, and `@default(MAX)` on `User.plan`) and has no usage limits: a `null` limit means unlimited. Accounts without an active paid subscription fall back to Max. Paid plans map to Stripe prices via `STRIPE_PRICE_PRO` and `STRIPE_PRICE_MAX`.
 
 ## Dashboard
 

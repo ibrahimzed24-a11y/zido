@@ -34,7 +34,9 @@ public struct VisionRequest: Codable, Sendable {
 
 public struct Usage: Codable, Equatable, Sendable {
     public var used: Int
-    public var limit: Int
+    /// nil when the plan is unlimited (Max).
+    public var limit: Int?
+    public var isUnlimited: Bool { limit == nil }
 }
 
 public struct VisionResponse: Codable, Sendable {
@@ -46,7 +48,14 @@ public struct VisionResponse: Codable, Sendable {
 }
 
 public struct HeartbeatResponse: Codable, Sendable {
-    public struct User: Codable, Sendable { public var name: String?; public var plan: String }
+    public struct User: Codable, Sendable {
+        public var id: String?
+        public var name: String?
+        /// GitHub login
+        public var login: String?
+        public var plan: String
+        public var unlimited: Bool?
+    }
     public struct Device: Codable, Sendable { public var id: String; public var name: String }
     public var ok: Bool
     public var user: User

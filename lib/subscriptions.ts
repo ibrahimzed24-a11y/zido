@@ -1,6 +1,6 @@
 import type Stripe from "stripe";
 import { prisma } from "./prisma";
-import { idOf, planFromSubscription } from "./billing";
+import { idOf, isPaidSubscription, planFromSubscription } from "./billing";
 import type { PlanId } from "./plans";
 
 /** Stores a Stripe subscription and sets User.plan from it. Called only from the verified webhook. */
@@ -18,7 +18,7 @@ export async function applySubscription(userId: string, sub: Stripe.Subscription
     }),
     prisma.user.update({
       where: { id: userId },
-      data: { plan, stripeSubscriptionId: plan === "FREE" ? null : sub.id, ...(customerId ? { stripeCustomerId: customerId } : {}) },
+      data: { plan, stripeSubscriptionId: isPaidSubscription(sub) ? sub.id : null, ...(customerId ? { stripeCustomerId: customerId } : {}) },
     }),
   ]);
   return plan;

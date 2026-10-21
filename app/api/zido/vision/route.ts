@@ -8,7 +8,7 @@ import { extractProfileUpdates } from "@/lib/memory";
 import { readMemory, recordTurn } from "@/lib/memory-store";
 import { parseVisionRequest } from "@/lib/vision";
 import { talkUsage } from "@/lib/usage";
-import { getPlan } from "@/lib/plans";
+import { getPlan, withinLimit } from "@/lib/plans";
 import { logActivity } from "@/lib/activity";
 
 export const runtime = "nodejs";
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
   }
 
   const usage = await talkUsage(user.id, user.plan);
-  if (usage.used >= usage.limit) {
+  if (!withinLimit(usage.used, usage.limit)) {
     return NextResponse.json(
       { error: `Daily limit of ${usage.limit} messages reached on the ${getPlan(user.plan).name} plan.`, usage },
       { status: 429 },

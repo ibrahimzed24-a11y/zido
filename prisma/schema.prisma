@@ -20,7 +20,7 @@ model User {
   githubId             String?        @unique
   githubLogin          String?
   avatarUrl            String?
-  plan                 Plan           @default(FREE)
+  plan                 Plan           @default(MAX)
   stripeCustomerId     String?        @unique
   stripeSubscriptionId String?        @unique
   createdAt            DateTime       @default(now())

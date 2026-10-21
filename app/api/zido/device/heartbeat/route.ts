@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { currentAuth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logActivity } from "@/lib/activity";
+import { getPlan } from "@/lib/plans";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ export async function POST(req: Request) {
   if (first) await logActivity(auth.user.id, "device", `${auth.device.name} connected`);
   return NextResponse.json({
     ok: true,
-    user: { name: auth.user.name, plan: auth.user.plan },
+    user: { id: auth.user.id, name: auth.user.name, login: auth.user.githubLogin, plan: auth.user.plan, unlimited: getPlan(auth.user.plan).visionPerDay === null },
     device: { id: auth.device.id, name: auth.device.name },
   });
 }

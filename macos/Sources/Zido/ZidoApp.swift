@@ -54,27 +54,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 // MARK: - Main view
 
-@MainActor
-final class ZidoEngine: ObservableObject {
-    static let shared = ZidoEngine()
-    static let deviceKeyDefaultsKey = "zidoDeviceKey"
-
-    let model = ZidoModel()
-    @Published private(set) var deviceKey: String
-
-    private init() {
-        deviceKey = UserDefaults.standard.string(forKey: Self.deviceKeyDefaultsKey) ?? ""
-    }
-
-    /// Stores the device key in UserDefaults and links this Mac with it.
-    func saveDeviceKey(_ key: String) {
-        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        deviceKey = trimmed
-        UserDefaults.standard.set(trimmed, forKey: Self.deviceKeyDefaultsKey)
-        Task { await model.link(key: trimmed) }
-    }
-}
-
 class ZidoViewModel: ObservableObject {
     enum ViewState { case chat, settings }
 
@@ -170,6 +149,11 @@ struct ZidoSettingsView: View {
                 Label("Linked as \(device)", systemImage: "checkmark.seal.fill")
                     .font(.footnote)
                     .foregroundStyle(.green)
+            }
+            if let plan = model.plan {
+                Label(model.unlimited ? "\(plan.capitalized) plan · Unlimited usage" : "\(plan.capitalized) plan",
+                      systemImage: model.unlimited ? "infinity" : "person.crop.circle")
+                    .font(.footnote)
             }
             if let status = model.status {
                 Text(status).font(.footnote).foregroundStyle(.secondary)

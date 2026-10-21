@@ -1,13 +1,18 @@
 export type PlanId = "FREE" | "PRO" | "MAX";
 
+/** The plan every new account starts on, and the one an account falls back to without an active paid subscription. */
+export const DEFAULT_PLAN: PlanId = "MAX";
+
 export type PlanInfo = {
   id: PlanId;
   name: string;
   price: number;
   tagline: string;
   features: string[];
-  visionPerDay: number;
-  agentTasksPerMonth: number;
+  /** Screen questions per 24 hours; null means unlimited. */
+  visionPerDay: number | null;
+  /** Agent tool calls per calendar month; null means unlimited. */
+  agentTasksPerMonth: number | null;
   recommended?: boolean;
   stripePriceEnv?: "STRIPE_PRICE_PRO" | "STRIPE_PRICE_MAX";
 };
@@ -38,24 +43,34 @@ export const PLANS: PlanInfo[] = [
     name: "Max",
     price: 100,
     tagline: "Your full-time digital shadow.",
-    features: ["Unlimited screen questions (fair use)", "Unlimited agent tasks", "Early access to new agents", "Priority support"],
-    visionPerDay: 5000,
-    agentTasksPerMonth: 100000,
+    features: ["Unlimited screen questions", "Unlimited agent tasks", "Early access to new agents", "Priority support"],
+    visionPerDay: null,
+    agentTasksPerMonth: null,
     stripePriceEnv: "STRIPE_PRICE_MAX",
   },
 ];
 
 export function getPlan(id: string): PlanInfo {
-  return PLANS.find((p) => p.id === id) ?? PLANS[0];
+  return PLANS.find((p) => p.id === id) ?? PLANS.find((p) => p.id === DEFAULT_PLAN)!;
 }
 
 export function planForPrice(priceId: string | null | undefined, env: Record<string, string | undefined> = process.env): PlanId {
-  if (!priceId) return "FREE";
+  if (!priceId) return DEFAULT_PLAN;
   if (priceId === env.STRIPE_PRICE_PRO) return "PRO";
   if (priceId === env.STRIPE_PRICE_MAX) return "MAX";
-  return "FREE";
+  return DEFAULT_PLAN;
 }
 
 export function canUseAgents(plan: PlanId): boolean {
-  return getPlan(plan).agentTasksPerMonth > 0;
+  const limit = getPlan(plan).agentTasksPerMonth;
+  return limit === null || limit > 0;
+}
+
+/** True when another use fits under the limit; a null limit is unlimited. */
+export function withinLimit(used: number, limit: number | null): boolean {
+  return limit === null || used < limit;
+}
+
+export function formatLimit(limit: number | null): string {
+  return limit === null ? "Unlimited" : String(limit);
 }
