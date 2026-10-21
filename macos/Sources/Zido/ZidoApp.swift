@@ -57,7 +57,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 @MainActor
 final class ZidoEngine: ObservableObject {
     static let shared = ZidoEngine()
+    static let deviceKeyDefaultsKey = "zidoDeviceKey"
+
     let model = ZidoModel()
+    @Published private(set) var deviceKey: String
+
+    private init() {
+        deviceKey = UserDefaults.standard.string(forKey: Self.deviceKeyDefaultsKey) ?? ""
+    }
+
+    /// Stores the device key in UserDefaults and links this Mac with it.
+    func saveDeviceKey(_ key: String) {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        deviceKey = trimmed
+        UserDefaults.standard.set(trimmed, forKey: Self.deviceKeyDefaultsKey)
+        Task { await model.link(key: trimmed) }
+    }
 }
 
 class ZidoViewModel: ObservableObject {
@@ -104,8 +119,10 @@ struct ZidoChatView: View {
                 Spacer()
                 Button(action: { viewModel.toggleSettings() }) {
                     Image(systemName: "gearshape")
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .help("Settings")
             }
             .padding()
 
@@ -117,21 +134,49 @@ struct ZidoChatView: View {
 struct ZidoSettingsView: View {
     @ObservedObject var viewModel: ZidoViewModel
     @ObservedObject var engine = ZidoEngine.shared
+    @ObservedObject var model = ZidoEngine.shared.model
+    @State private var keyInput: String = ""
+    @State private var saved = false
 
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Button(action: { viewModel.toggleSettings() }) {
                     Image(systemName: "chevron.left")
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 Text("Settings")
                     .font(.headline)
                 Spacer()
             }
-            .padding()
 
-            ScrollView { SettingsView(model: engine.model) }
+            Text("Device Key")
+                .font(.subheadline.weight(.medium))
+            SecureField("Paste the key from the dashboard", text: $keyInput)
+                .textFieldStyle(.roundedBorder)
+            HStack {
+                Button("Save") {
+                    engine.saveDeviceKey(keyInput)
+                    saved = true
+                }
+                .disabled(keyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if saved {
+                    Text("Saved").font(.footnote).foregroundStyle(.green)
+                }
+            }
+
+            if let device = model.linkedDevice {
+                Label("Linked as \(device)", systemImage: "checkmark.seal.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.green)
+            }
+            if let status = model.status {
+                Text(status).font(.footnote).foregroundStyle(.secondary)
+            }
+            Spacer()
         }
+        .padding()
+        .onAppear { keyInput = engine.deviceKey }
     }
 }
