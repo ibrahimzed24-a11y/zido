@@ -1,17 +1,25 @@
-import AVFoundation
+import AppKit
+import ApplicationServices
 import CoreGraphics
 
-/// Camera and microphone use the NSCameraUsageDescription and NSMicrophoneUsageDescription strings in Info.plist.
+/// Screen Recording and Accessibility. These read the real state; macOS decides, the user grants.
 enum Permissions {
-    static func requestCamera() {
-        AVCaptureDevice.requestAccess(for: .video) { _ in }
-    }
+    static var screenRecordingGranted: Bool { CGPreflightScreenCaptureAccess() }
+    static var accessibilityGranted: Bool { AXIsProcessTrusted() }
 
-    static func requestMicrophone() {
-        AVCaptureDevice.requestAccess(for: .audio) { _ in }
-    }
-
+    /// Shows the system prompt once; afterwards macOS only allows changes in System Settings.
     static func requestScreenRecording() {
-        _ = CGRequestScreenCaptureAccess()
+        if !CGRequestScreenCaptureAccess() { openSettings("Privacy_ScreenCapture") }
+    }
+
+    static func requestAccessibility() {
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        if !AXIsProcessTrustedWithOptions(options) { openSettings("Privacy_Accessibility") }
+    }
+
+    static func openSettings(_ pane: String) {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") {
+            NSWorkspace.shared.open(url)
+        }
     }
 }

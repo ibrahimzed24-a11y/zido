@@ -8,3 +8,8 @@ export function stripe(): Stripe {
   client ??= new Stripe(key);
   return client;
 }
+
+/** Verifies the Stripe-Signature header against the raw body. Throws when it does not match. */
+export function verifyStripeEvent(raw: string, signature: string, secret: string, s: Stripe = stripe()): Stripe.Event {
+  return s.webhooks.constructEvent(raw, signature, secret);
+}

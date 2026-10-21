@@ -1,32 +1,45 @@
 import AppKit
-import ApplicationServices
 import CoreGraphics
+import ZidoCore
 
-/// Synthesised input with CGEvent. Requires the Accessibility permission.
+/// The controlled foundation for synthetic input. Every click needs Accessibility trust, a point on a display,
+/// a pause since the last click, and the user's explicit confirmation. Nothing here runs on its own.
+@MainActor
 enum InputController {
-    static func isTrusted(prompt: Bool) -> Bool {
-        let options = ["AXTrustedCheckOptionPrompt": prompt] as CFDictionary
-        return AXIsProcessTrustedWithOptions(options)
+    private static var guardrail = ClickGuard(minInterval: 1.0)
+
+    static func displayBounds() -> [CGRect] {
+        var count: UInt32 = 0
+        CGGetActiveDisplayList(0, nil, &count)
+        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        CGGetActiveDisplayList(count, &ids, &count)
+        return ids.map { CGDisplayBounds($0) }
     }
 
-    /// Moves the pointer to `point` (global, top-left origin) and left-clicks.
-    static func click(at point: CGPoint) {
-        let source = CGEventSource(stateID: .hidSystemState)
-        for type in [CGEventType.mouseMoved, .leftMouseDown, .leftMouseUp] {
-            CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
-        }
+    /// Asks the user, then clicks at `point` (global display coordinates, top-left origin).
+    @discardableResult
+    static func confirmAndClick(at point: CGPoint, label: String) -> ClickGuard.Verdict {
+        let precheck = guardrail.check(point: point, displays: displayBounds(), trusted: Permissions.accessibilityGranted, confirmed: true)
+        guard precheck == .allowed else { return precheck }
+
+        let alert = NSAlert()
+        alert.messageText = "Let Zido click “\(label)”?"
+        alert.informativeText = "Zido will click once at the highlighted spot."
+        alert.addButton(withTitle: "Click")
+        alert.addButton(withTitle: "Cancel")
+        let confirmed = alert.runModal() == .alertFirstButtonReturn
+
+        let verdict = guardrail.check(point: point, displays: displayBounds(), trusted: Permissions.accessibilityGranted, confirmed: confirmed)
+        guard verdict == .allowed else { return verdict }
+        post(at: point)
+        guardrail.record()
+        return .allowed
     }
 
-    /// Types text into the focused field.
-    static func type(_ text: String) {
+    private static func post(at point: CGPoint) {
         let source = CGEventSource(stateID: .hidSystemState)
-        for unit in text.utf16 {
-            var character = unit
-            for keyDown in [true, false] {
-                let event = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: keyDown)
-                event?.keyboardSetUnicodeString(stringLength: 1, unicodeString: &character)
-                event?.post(tap: .cghidEventTap)
-            }
-        }
+        CGEvent(mouseEventSource: source, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
+        CGEvent(mouseEventSource: source, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
+        CGEvent(mouseEventSource: source, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
     }
 }

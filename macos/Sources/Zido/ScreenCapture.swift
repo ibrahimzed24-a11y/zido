@@ -1,57 +1,34 @@
 import AppKit
 import CoreGraphics
+import ZidoCore
 
 struct Screenshot {
-    let pixelSize: CGSize
     let base64: String
-    let mediaType: String
+    let size: ScreenSize
 }
 
-/// Captures the main display with CGWindowListCreateImage. Zido's own windows set sharingType = .none, so they are left out.
-final class ScreenCapture {
-    /// Longest side sent to Claude; larger screenshots are scaled down to keep requests small.
-    let maxSide = 1568
+/// Captures the main display with CGWindowListCreateImage. Zido's own windows use sharingType .none, so they are not in the shot.
+enum ScreenCapture {
+    static let maxDimension: CGFloat = 1568
 
-    func hasPermission() -> Bool {
-        CGPreflightScreenCaptureAccess()
-    }
-
-    func captureMainDisplay() -> Screenshot? {
-        guard hasPermission() else {
-            _ = CGRequestScreenCaptureAccess()
-            return nil
-        }
+    static func captureMainDisplay() -> Screenshot? {
         let bounds = CGDisplayBounds(CGMainDisplayID())
-        guard let image = CGWindowListCreateImage(bounds, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution]) else {
-            return nil
-        }
+        guard let image = CGWindowListCreateImage(bounds, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution]) else { return nil }
         let scaled = downscale(image)
         let rep = NSBitmapImageRep(cgImage: scaled)
-        guard let data = rep.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) else { return nil }
-        return Screenshot(
-            pixelSize: CGSize(width: scaled.width, height: scaled.height),
-            base64: data.base64EncodedString(),
-            mediaType: "image/jpeg"
-        )
+        guard let jpeg = rep.representation(using: .jpeg, properties: [.compressionFactor: 0.7]) else { return nil }
+        return Screenshot(base64: jpeg.base64EncodedString(), size: ScreenSize(width: scaled.width, height: scaled.height))
     }
 
-    private func downscale(_ image: CGImage) -> CGImage {
-        let longest = max(image.width, image.height)
-        guard longest > maxSide else { return image }
-        let scale = Double(maxSide) / Double(longest)
-        let width = Int(Double(image.width) * scale)
-        let height = Int(Double(image.height) * scale)
-        guard let ctx = CGContext(
-            data: nil,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { return image }
+    private static func downscale(_ image: CGImage) -> CGImage {
+        let w = CGFloat(image.width), h = CGFloat(image.height)
+        let scale = min(1, maxDimension / max(w, h))
+        guard scale < 1 else { return image }
+        let size = CGSize(width: (w * scale).rounded(), height: (h * scale).rounded())
+        guard let ctx = CGContext(data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return image }
         ctx.interpolationQuality = .high
-        ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        ctx.draw(image, in: CGRect(origin: .zero, size: size))
         return ctx.makeImage() ?? image
     }
 }

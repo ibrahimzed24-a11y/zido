@@ -50,6 +50,17 @@ jobs:
           echo "Found $APP_PATH"
           echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
 
+      - name: Verify Zido.app bundle
+        run: |
+          APP="$(find "$GITHUB_WORKSPACE" -maxdepth 6 -type d -name Zido.app | head -1)"
+          test -n "$APP" || { echo "Zido.app was not produced"; exit 1; }
+          plutil -lint "$APP/Contents/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")" = "Zido"
+          chmod +x "$APP/Contents/MacOS/Zido"
+          test -x "$APP/Contents/MacOS/Zido"
+          file "$APP/Contents/MacOS/Zido"
+          codesign --verify --verbose=2 "$APP"
+
       - name: Upload App Artifact
         uses: actions/upload-artifact@v4
         with:

@@ -1,145 +1,119 @@
 import AppKit
 import SwiftUI
-import ZidoCore
 
+/// A borderless panel pinned to the top centre of the main screen, just under the notch.
 final class NotchPanel: NSPanel {
-    override var canBecomeKey: Bool { true }
-}
+    static let collapsed = NSSize(width: 220, height: 34)
+    static let expanded = NSSize(width: 440, height: 420)
 
-/// The Notch UI: a borderless panel pinned to the top centre of the screen, over the hardware notch.
-@MainActor
-final class NotchWindowController {
-    let panel: NotchPanel
+    private let model: ZidoModel
 
+    @MainActor
     init(model: ZidoModel) {
-        let size = NSSize(width: 440, height: 300)
-        panel = NotchPanel(
-            contentRect: NSRect(origin: .zero, size: size),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        panel.sharingType = .none
-        panel.isMovable = false
-        panel.contentView = NSHostingView(rootView: NotchView().environmentObject(model))
-        position()
+        self.model = model
+        super.init(contentRect: NSRect(origin: .zero, size: Self.collapsed),
+                   styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = false
+        sharingType = .none
+        isMovable = false
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        contentView = NSHostingView(rootView: NotchView(model: model, onResize: { [weak self] open in self?.resize(open) }))
+        resize(false)
     }
 
-    func position() {
+    override var canBecomeKey: Bool { true }
+
+    func resize(_ open: Bool) {
         guard let screen = NSScreen.main else { return }
-        let frame = screen.frame
-        let size = panel.frame.size
-        panel.setFrameOrigin(NSPoint(x: frame.midX - size.width / 2, y: frame.maxY - size.height))
-    }
-
-    func show() {
-        panel.orderFrontRegardless()
+        let size = open ? Self.expanded : Self.collapsed
+        let frame = NSRect(x: screen.frame.midX - size.width / 2, y: screen.frame.maxY - size.height, width: size.width, height: size.height)
+        setFrame(frame, display: true, animate: true)
+        if open { makeKey() }
     }
 }
 
-struct NotchShape: Shape {
-    var radius: CGFloat = 18
-
-    func path(in r: CGRect) -> Path {
-        var p = Path()
-        p.move(to: CGPoint(x: r.minX, y: r.minY))
-        p.addLine(to: CGPoint(x: r.maxX, y: r.minY))
-        p.addLine(to: CGPoint(x: r.maxX, y: r.maxY - radius))
-        p.addQuadCurve(to: CGPoint(x: r.maxX - radius, y: r.maxY), control: CGPoint(x: r.maxX, y: r.maxY))
-        p.addLine(to: CGPoint(x: r.minX + radius, y: r.maxY))
-        p.addQuadCurve(to: CGPoint(x: r.minX, y: r.maxY - radius), control: CGPoint(x: r.minX, y: r.maxY))
-        p.closeSubpath()
-        return p
+/// NSVisualEffectView for the translucent chat background.
+struct VisualEffect: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let v = NSVisualEffectView()
+        v.material = .hudWindow
+        v.blendingMode = .behindWindow
+        v.state = .active
+        return v
     }
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }
 
 struct NotchView: View {
-    @EnvironmentObject var model: ZidoModel
+    @ObservedObject var model: ZidoModel
+    let onResize: (Bool) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
-            content
-                .frame(width: model.expanded ? 420 : 190, height: model.expanded ? 280 : 34, alignment: .top)
-                .background(NotchShape().fill(Color.black))
-                .animation(.spring(response: 0.35, dampingFraction: 0.8), value: model.expanded)
-                .onHover { hovering in
-                    if hovering { model.expanded = true }
+            HStack(spacing: 8) {
+                ZBuddyView(state: model.buddy)
+                Text(model.buddy == .thinking ? "Thinking…" : "Zido").font(.caption.weight(.medium)).foregroundStyle(.white)
+                Spacer()
+                if model.expanded {
+                    Button { toggle() } label: { Image(systemName: "chevron.up") }.buttonStyle(.plain).foregroundStyle(.white)
                 }
-            Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .frame(height: NotchPanel.collapsed.height)
+            .contentShape(Rectangle())
+            .onTapGesture { if !model.expanded { toggle() } }
+
+            if model.expanded { ChatView(model: model) }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(model.expanded ? AnyView(VisualEffect()) : AnyView(Color.black))
+        .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 18, bottomTrailingRadius: 18))
     }
 
-    @ViewBuilder
-    private var content: some View {
-        if model.expanded {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Circle().fill(model.busy ? Color.orange : Color.purple).frame(width: 8, height: 8)
-                    Text("Zido").font(.headline).foregroundColor(.white)
-                    Spacer()
-                    Button {
-                        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-                    } label: {
-                        Image(systemName: "gearshape")
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundColor(.gray)
-                    Button {
-                        model.expanded = false
-                    } label: {
-                        Image(systemName: "chevron.up")
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundColor(.gray)
-                }
+    private func toggle() {
+        model.expanded.toggle()
+        onResize(model.expanded)
+    }
+}
+
+struct ChatView: View {
+    @ObservedObject var model: ZidoModel
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ScrollViewReader { proxy in
                 ScrollView {
-                    Text(model.reply.isEmpty ? "Hi, I'm Zido. Ask me anything about what's on your screen." : model.reply)
-                        .font(.callout)
-                        .foregroundColor(.white.opacity(0.9))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
-                }
-                if !model.rects.isEmpty {
-                    HStack {
-                        Button("Click \"\(model.rects[0].label)\" for me") { model.clickFirstHighlight() }
-                        Button("Clear highlights") { model.clearHighlights() }
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        if model.messages.isEmpty {
+                            Text("Ask me anything about what's on your screen.").foregroundStyle(.secondary).font(.callout)
+                        }
+                        ForEach(model.messages) { m in
+                            Text(m.text)
+                                .font(.callout)
+                                .textSelection(.enabled)
+                                .padding(8)
+                                .background(RoundedRectangle(cornerRadius: 10).fill(m.fromUser ? Color.purple.opacity(0.35) : Color.white.opacity(0.08)))
+                                .frame(maxWidth: .infinity, alignment: m.fromUser ? .trailing : .leading)
+                                .id(m.id)
+                        }
                     }
-                    .font(.caption)
+                    .padding(.horizontal, 12)
                 }
-                HStack {
-                    TextField("Say hello to Zido…", text: $model.question)
-                        .textFieldStyle(.plain)
-                        .padding(8)
-                        .background(Color.white.opacity(0.08))
-                        .cornerRadius(8)
-                        .foregroundColor(.white)
-                        .onSubmit { Task { await model.ask() } }
-                    Button {
-                        Task { await model.ask() }
-                    } label: {
-                        Image(systemName: model.busy ? "hourglass" : "arrow.up.circle.fill").font(.title2)
-                    }
+                .onChange(of: model.messages) { _, messages in
+                    if let last = messages.last { withAnimation { proxy.scrollTo(last.id, anchor: .bottom) } }
+                }
+            }
+            HStack {
+                TextField("Say hello…", text: $model.draft)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { Task { await model.ask() } }
+                Button { Task { await model.ask() } } label: { Image(systemName: "arrow.up.circle.fill").font(.title2) }
                     .buttonStyle(.plain)
-                    .foregroundColor(.purple)
-                    .disabled(model.busy)
-                }
-                Text(model.status).font(.caption2).foregroundColor(.gray).lineLimit(2)
+                    .disabled(model.buddy == .thinking)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 34)
-            .padding(.bottom, 12)
-        } else {
-            HStack(spacing: 6) {
-                Image(systemName: "sparkles").foregroundColor(.purple)
-                Text("Zido").font(.caption).bold().foregroundColor(.white)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(12)
         }
     }
 }
