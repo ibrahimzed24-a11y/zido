@@ -1,0 +1,60 @@
+name: Build Zido macOS App
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          XCODE_DEV="/Applications/Xcode_15.0.app/Contents/Developer"
+          if [ ! -d "$XCODE_DEV" ]; then
+            echo "Xcode 15.0 is not installed on this runner; using the runner's default Xcode."
+            ls -d /Applications/Xcode*.app || true
+            XCODE_DEV="$(xcode-select -p)"
+          fi
+          sudo xcode-select -s "$XCODE_DEV"
+          xcodebuild -version
+
+      # The Zido scheme comes from the Swift package in macos/ (Package.swift).
+      - name: Build Zido
+        working-directory: macos
+        run: xcodebuild -scheme Zido -configuration Release -sdk macosx -destination 'generic/platform=macOS' build
+
+      - name: Find Zido.app
+        run: |
+          DERIVED="$HOME/Library/Developer/Xcode/DerivedData"
+          APP_PATH="$(find "$DERIVED" -type d -name Zido.app -path '*/Build/Products/Release/*' | head -n 1)"
+          if [ -z "$APP_PATH" ]; then
+            # A Swift package scheme builds a bare executable; wrap it in Zido.app
+            # with macos/Info.plist, the same way macos/scripts/bundle.sh does.
+            BIN="$(find "$DERIVED" -type f -name Zido -path '*/Build/Products/Release/*' | head -n 1)"
+            if [ -z "$BIN" ]; then
+              echo "No Zido.app or Zido executable found in $DERIVED"
+              exit 1
+            fi
+            APP_PATH="$RUNNER_TEMP/Zido.app"
+            mkdir -p "$APP_PATH/Contents/MacOS"
+            cp "$BIN" "$APP_PATH/Contents/MacOS/Zido"
+            cp macos/Info.plist "$APP_PATH/Contents/Info.plist"
+            codesign --force --sign - "$APP_PATH"
+          fi
+          echo "Found $APP_PATH"
+          echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
+
+      - name: Zip Zido.app
+        run: ditto -c -k --keepParent "$APP_PATH" Zido-Build.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Zido-MacOS-App
+          path: Zido-Build.zip
